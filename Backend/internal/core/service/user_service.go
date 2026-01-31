@@ -9,9 +9,9 @@ import (
 type UserService interface {
 	OAuthLogin(ctx context.Context, email string, provider string, firstName string, lastName string) (loginStatus bool, uid string, err error)
 	Login(ctx context.Context, email string, password string) (loginStatus bool, uid string, err error)
-	Register(ctx context.Context, email string, password string, firstname string, lastname string) (registerStatus bool, err error)
+	Register(ctx context.Context, email string, password string, firstName string, lastName string) (registerStatus bool, err error)
 	DeleteUser(ctx context.Context, uid string) (deleteStatus bool, err error)
-	UpdateUser(ctx context.Context, uid string, firstname string, lastname string) (updateStatus bool, err error)
+	UpdateUser(ctx context.Context, uid string, firstName string, lastName string) (updateStatus bool, err error)
 }
 
 type UserServiceImpl struct {
@@ -38,8 +38,8 @@ func (s *UserServiceImpl) Login(ctx context.Context, email string, password stri
 	return status, uid, nil
 }
 
-func (s *UserServiceImpl) Register(ctx context.Context, email string, password string, firstname string, lastname string) (registerStatus bool, err error) {
-	status, err := s.userRepo.CreateUser(email, password, firstname, lastname)
+func (s *UserServiceImpl) Register(ctx context.Context, email string, password string, firstName string, lastName string) (registerStatus bool, err error) {
+	status, err := s.userRepo.CreateUser(email, password, firstName, lastName)
 	if err != nil {
 		return false, err
 	}
@@ -54,8 +54,8 @@ func (s *UserServiceImpl) DeleteUser(ctx context.Context, uid string) (deleteSta
 	return status, nil
 }
 
-func (s *UserServiceImpl) UpdateUser(ctx context.Context, uid string, firstname string, lastname string) (updateStatus bool, err error) {
-	status, err := s.userRepo.UpdateUserInfo(uid, firstname, lastname)
+func (s *UserServiceImpl) UpdateUser(ctx context.Context, uid string, firstName string, lastName string) (updateStatus bool, err error) {
+	status, err := s.userRepo.UpdateUserInfo(uid, firstName, lastName)
 	if err != nil {
 		return false, err
 	}

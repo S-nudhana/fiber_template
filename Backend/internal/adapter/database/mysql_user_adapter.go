@@ -8,8 +8,7 @@ import (
 
 	"os"
 	"strconv"
-	"time"
-	
+
 	"github.com/google/uuid"
 )
 
@@ -21,7 +20,7 @@ func NewMySQLUserAdapter(db *sql.DB) *MySQLUserAdapter {
 	return &MySQLUserAdapter{db: db}
 }
 
-func (m *MySQLUserAdapter) CreateUser(email string, password string, firstname string, lastname string) (createStatus bool, err error) {
+func (m *MySQLUserAdapter) CreateUser(email string, password string, firstName string, lastName string) (createStatus bool, err error) {
 	var existingEmail string
 	_ = m.db.QueryRow("SELECT user_email FROM users WHERE user_email = ?", email).Scan(&existingEmail)
 	if existingEmail != "" {
@@ -37,29 +36,91 @@ func (m *MySQLUserAdapter) CreateUser(email string, password string, firstname s
 		return false, errors.New("failed to hash password")
 	}
 
-	now := time.Now()
-	_, err = m.db.Exec("INSERT INTO users (user_id, user_email, user_password, user_firstname, user_lastname, user_createDate, user_modifyDate) VALUES (?, ?, ?, ?, ?, ?, ?)", userId, email, hashPassword, firstname, lastname, now, now)
+	tx, err := m.db.Begin()
+	if err != nil {
+		return false, err
+	}
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	_, err = tx.Exec(`
+		INSERT INTO users
+		(user_id, user_email, user_firstName, user_lastName, user_authType)
+		VALUES (?, ?, ?, ?, ?)
+	`, userId, email, firstName, lastName, "local")
+	if err != nil {
+		return false, err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO users_local (user_id, user_password)
+		VALUES (?, ?)
+	`, userId, hashPassword)
+	if err != nil {
+		return false, err
+	}
+	err = tx.Commit()
 	if err != nil {
 		return false, errors.New("failed to create user")
 	}
 	return true, nil
 }
 
-func (m *MySQLUserAdapter) OAuthAuthenticateUser(email string, provider string, firstName string, lastName string) (authStatus bool, uid string, err error){
-	var userId string
-
-	err = m.db.QueryRow("SELECT uid, user_provider FROM users_oAuth WHERE user_email = ?", email).Scan(&userId)
+func (m *MySQLUserAdapter) OAuthAuthenticateUser(
+	email string,
+	provider string,
+	firstName string,
+	lastName string,
+) (bool, string, error) {
+	var userUID string
+	err := m.db.QueryRow(`
+		SELECT u.user_id
+		FROM users u
+		JOIN users_oauth uo ON u.user_id = uo.user_id
+		WHERE u.user_email = ? AND uo.user_provider = ?
+	`, email, provider).Scan(&userUID)
 	if err == nil {
-		return true, userId, nil
+		return true, userUID, nil
 	}
 
-	new_userId := uuid.New()
-	oAuthUID := new_userId.String() + ":" + provider
-	now := time.Now()
+	if err != sql.ErrNoRows {
+		return false, "", err
+	}
+	newUID := uuid.New().String()
+	oAuthUID := newUID + ":" + provider
 
-	_, err = m.db.Exec("INSERT INTO users_oAuth (uid, user_email, user_provider, user_firstname, user_lastname, user_modifyDate) VALUES (?, ?, ?, ?, ?, ?)", oAuthUID, email, provider, firstName, lastName, now)
+	tx, err := m.db.Begin()
 	if err != nil {
-		return false, "", errors.New("failed to create user")
+		return false, "", err
+	}
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	_, err = tx.Exec(`
+		INSERT INTO users
+		(user_id, user_email, user_firstName, user_lastName, user_authType)
+		VALUES (?, ?, ?, ?, ?)
+	`, oAuthUID, email, firstName, lastName, "oauth")
+	if err != nil {
+		return false, "", err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO users_oauth (user_id, user_provider)
+		VALUES (?, ?)
+	`, oAuthUID, provider)
+	if err != nil {
+		return false, "", err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return false, "", err
 	}
 	return true, oAuthUID, nil
 }
@@ -68,7 +129,12 @@ func (m *MySQLUserAdapter) AuthenticateUser(email string, password string) (auth
 	var storedPassword string
 	var userId uuid.UUID
 
-	err = m.db.QueryRow("SELECT user_id, user_password FROM users WHERE user_email = ?", email).Scan(&userId, &storedPassword)
+	err = m.db.QueryRow(`
+		SELECT u.user_id, ul.user_password 
+		FROM users AS u 
+		JOIN users_local AS ul ON u.user_id = ul.user_id  
+		WHERE u.user_email = ?
+	`, email).Scan(&userId, &storedPassword)
 	if err != nil {
 		return false, "", errors.New("user not found")
 	}
@@ -93,14 +159,13 @@ func (m *MySQLUserAdapter) RemoveUser(uid string) (deleteStatus bool, err error)
 	return true, nil
 }
 
-func (m *MySQLUserAdapter) UpdateUserInfo(uid string, firstname string, lastname string) (updateStatus bool, err error) {
+func (m *MySQLUserAdapter) UpdateUserInfo(uid string, firstName string, lastName string) (updateStatus bool, err error) {
 	userId, err := uuid.Parse(uid)
 	if err != nil {
 		return false, errors.New("invalid user ID")
 	}
 
-	now := time.Now()
-	result, err := m.db.Exec("UPDATE users SET user_firstname = ?, user_lastname = ?, user_modifyDate = ? WHERE user_id = ?", firstname, lastname, now, userId)
+	result, err := m.db.Exec("UPDATE users SET user_firstName = ?, user_lastName = ? WHERE user_id = ?", firstName, lastName, userId)
 	if err != nil {
 		return false, errors.New("failed to update user")
 	}
