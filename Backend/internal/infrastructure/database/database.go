@@ -27,6 +27,6 @@ func New() (*sql.DB, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	log.Println("connected to mysql")
+	log.Println("Database connected successfully")
 	return db, nil
 }
