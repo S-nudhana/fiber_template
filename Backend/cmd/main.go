@@ -32,8 +32,8 @@ func main() {
 		Path:     "/",
 		HttpOnly: true,
 		MaxAge:   86400,
-		Secure:   false,                // MUST be false on localhost
-		SameSite: http.SameSiteLaxMode, // REQUIRED
+		Secure:   os.Getenv("ENV") == "production",
+		SameSite: http.SameSiteLaxMode,
 	}
 	gothic.Store = store
 
